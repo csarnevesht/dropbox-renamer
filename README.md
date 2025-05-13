@@ -11,22 +11,17 @@ A simple tool that downloads files from Dropbox and renames them with their modi
 
 ## Creating the Distribution Package
 
-1. Navigate to the scripts directory:
-   ```bash
-   cd scripts
-   ```
-
-2. Install build dependencies:
+1. Install build dependencies:
    ```bash
    pip3 install build
    ```
 
-3. Create the distribution package:
+2. Create the distribution package:
    ```bash
    python3 -m build
    ```
 
-4. The distribution files will be created in the `dist` directory:
+3. The distribution files will be created in the `dist` directory:
    - `dropbox_file_renamer-1.0.0.tar.gz` (source distribution)
    - `dropbox_file_renamer-1.0.0-py3-none-any.whl` (wheel distribution)
 
@@ -44,7 +39,7 @@ A simple tool that downloads files from Dropbox and renames them with their modi
    - Click "Create repository"
 
 3. Upload your files:
-   - Upload the entire `scripts` directory to your repository
+   - Upload the project files to your repository
    - Make sure to maintain the directory structure
 
 4. Open in Codespaces:
@@ -81,7 +76,7 @@ A simple tool that downloads files from Dropbox and renames them with their modi
    - Click "Create Repl"
 
 3. Upload your files:
-   - Upload the entire `scripts` directory to your Repl
+   - Upload the project files to your Repl
    - Make sure to maintain the directory structure
 
 4. Install PyInstaller:

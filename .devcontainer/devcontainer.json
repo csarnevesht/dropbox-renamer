@@ -1,0 +1,14 @@
+{
+    "name": "Windows Development",
+    "image": "mcr.microsoft.com/windows/servercore:ltsc2019",
+    "features": {
+        "ghcr.io/devcontainers/features/windows:1": {}
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-vscode.powershell"
+            ]
+        }
+    }
+}
