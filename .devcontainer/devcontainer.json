@@ -1,14 +1,18 @@
 {
-    "name": "Windows Development",
-    "image": "mcr.microsoft.com/windows/servercore:ltsc2019",
+    "name": "Python Development",
+    "image": "mcr.microsoft.com/devcontainers/python:3",
     "features": {
-        "ghcr.io/devcontainers/features/windows:1": {}
+        "ghcr.io/devcontainers/features/python:1": {},
+        "ghcr.io/devcontainers/features/git:1": {}
     },
     "customizations": {
         "vscode": {
             "extensions": [
-                "ms-vscode.powershell"
+                "ms-python.python",
+                "ms-python.vscode-pylance"
             ]
         }
-    }
+    },
+    "postCreateCommand": "pip install --user -r requirements.txt",
+    "remoteUser": "vscode"
 }
