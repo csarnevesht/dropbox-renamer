@@ -26,9 +26,9 @@ jobs:
       - name: Build executable
         run: |
           # Install dependencies that PyInstaller needs to include
-          pip install dropbox
+          pip install dropbox python-dotenv
           # Build with all dependencies
-          pyinstaller --onefile --name dropbox-renamer --hidden-import=dropbox dropbox_renamer/rename_files_with_date.py
+          pyinstaller --onefile --name dropbox-renamer --hidden-import=dropbox --hidden-import=dotenv dropbox_renamer/rename_files_with_date.py
       - name: Create distribution zip
         run: |
           # Create a distribution directory
