@@ -85,8 +85,8 @@ jobs:
           mkdir -p dist/dropbox-renamer-macos
           # Copy the executable
           cp dist/dropbox-renamer dist/dropbox-renamer-macos/
-          # Copy the README
-          cp README.md dist/dropbox-renamer-macos/
+          # Copy the Mac README
+          cp README.mac.md dist/dropbox-renamer-macos/README.md
           # Make the executable executable
           chmod +x dist/dropbox-renamer-macos/dropbox-renamer
           # Create the zip file
