@@ -17,6 +17,7 @@ import tempfile
 import shutil
 from dotenv import load_dotenv
 import sys
+import re
 
 def create_timestamped_directory(base_dir):
     """Create a new directory with current timestamp."""
@@ -36,18 +37,29 @@ def ensure_directory_exists(directory):
         print(f"Error creating directory {directory}: {str(e)}")
         return False
 
+def has_date_prefix(name):
+    """Check if the filename already has a date prefix (YYYYMMDD)."""
+    # Regular expression to match YYYYMMDD at the beginning of the filename
+    pattern = r'^(19|20)\d{6}\s+'
+    return bool(re.match(pattern, name))
+
 def get_renamed_path(metadata, path, is_folder=False):
     """Get the renamed path with date prefix."""
     try:
+        # Get the original name
+        original_name = os.path.basename(path)
+        
+        # If the name already has a date prefix, don't modify it
+        if has_date_prefix(original_name):
+            print(f"File already has date prefix: {original_name}")
+            return original_name
+        
         # Get modification date from metadata
         if is_folder:
             # For folders, use current date since they don't have server_modified
             date_prefix = datetime.datetime.now().strftime("%Y%m%d")
         else:
             date_prefix = metadata.server_modified.strftime("%Y%m%d")
-        
-        # Get the original name
-        original_name = os.path.basename(path)
         
         # Create new name with date prefix
         new_name = f"{date_prefix} {original_name}"
