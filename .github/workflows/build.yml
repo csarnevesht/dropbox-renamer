@@ -55,15 +55,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Download release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ github.ref_name }}
-          files: dropbox-renamer-windows.zip
+        run: |
+          $headers = @{
+            "Authorization" = "token ${{ secrets.GITHUB_TOKEN }}"
+            "Accept" = "application/octet-stream"
+          }
+          $url = "https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ github.ref_name }}"
+          $release = Invoke-RestMethod -Uri $url -Headers $headers
+          $asset = $release.assets | Where-Object { $_.name -eq "dropbox-renamer-windows.zip" }
+          Invoke-WebRequest -Uri $asset.url -Headers $headers -OutFile "dropbox-renamer-windows.zip"
+      - name: List files
+        run: |
+          dir
       - name: Extract zip
         run: |
-          Expand-Archive -Path dropbox-renamer-windows.zip -DestinationPath .
+          Expand-Archive -Path dropbox-renamer-windows.zip -DestinationPath test-files -Force
       - name: Test executable
         run: |
-          # Basic test to ensure executable runs
-          .\dropbox-renamer.exe --help
-          # Add more specific tests as needed 
+          cd test-files
+          dir
+          .\dropbox-renamer.exe --help 
