@@ -43,7 +43,47 @@ def has_date_prefix(name):
     pattern = r'^(19|20)\d{6}\s+'
     return bool(re.match(pattern, name))
 
-def get_renamed_path(metadata, path, is_folder=False):
+def get_folder_creation_date(dbx, path):
+    """Get the creation date of a folder by looking at its contents."""
+    try:
+        # List the folder contents
+        result = dbx.files_list_folder(path)
+        
+        # If folder has contents, find the oldest file
+        if result.entries:
+            oldest_date = None
+            for entry in result.entries:
+                if isinstance(entry, dropbox.files.FileMetadata):
+                    if oldest_date is None or entry.server_modified < oldest_date:
+                        oldest_date = entry.server_modified
+            
+            # If we found files, use the oldest file's date
+            if oldest_date:
+                return oldest_date
+        
+        # If no files found or empty folder, try looking at the folder info
+        folder_info = dbx.files_get_metadata(path)
+        
+        # Some Dropbox API versions might include a 'client_modified' field
+        if hasattr(folder_info, 'client_modified'):
+            return folder_info.client_modified
+            
+        # Try getting the shared folder info which might have creation date
+        try:
+            shared_info = dbx.sharing_get_folder_metadata(path)
+            if hasattr(shared_info, 'time_created'):
+                return shared_info.time_created
+        except:
+            pass
+        
+        # If all else fails, use the current date
+        return datetime.datetime.now()
+        
+    except Exception as e:
+        print(f"Error getting folder creation date for {path}: {e}")
+        return datetime.datetime.now()
+
+def get_renamed_path(metadata, path, is_folder=False, dbx=None):
     """Get the renamed path with date prefix."""
     try:
         # Get the original name
@@ -51,14 +91,21 @@ def get_renamed_path(metadata, path, is_folder=False):
         
         # If the name already has a date prefix, don't modify it
         if has_date_prefix(original_name):
-            print(f"File already has date prefix: {original_name}")
+            print(f"File/folder already has date prefix: {original_name}")
             return original_name
         
-        # Get modification date from metadata
+        # Get date for prefix
         if is_folder:
-            # For folders, use current date since they don't have server_modified
-            date_prefix = datetime.datetime.now().strftime("%Y%m%d")
+            # For folders, try to get creation date
+            if dbx:
+                date_obj = get_folder_creation_date(dbx, path)
+                date_prefix = date_obj.strftime("%Y%m%d")
+                print(f"Using folder creation date for {path}: {date_prefix}")
+            else:
+                # Fallback to current date if dbx not provided
+                date_prefix = datetime.datetime.now().strftime("%Y%m%d")
         else:
+            # For files, use modification date from metadata
             date_prefix = metadata.server_modified.strftime("%Y%m%d")
         
         # Create new name with date prefix
@@ -105,7 +152,7 @@ def process_dropbox_folder(dbx, dropbox_path, local_dir):
                 download_and_rename_file(dbx, entry_path, local_dir)
             elif isinstance(entry, dropbox.files.FolderMetadata):
                 # It's a folder, create local directory and process its contents
-                folder_name = get_renamed_path(entry, entry_path, is_folder=True)
+                folder_name = get_renamed_path(entry, entry_path, is_folder=True, dbx=dbx)
                 new_local_dir = os.path.join(local_dir, folder_name)
                 ensure_directory_exists(new_local_dir)
                 process_dropbox_folder(dbx, entry_path, new_local_dir)
@@ -119,7 +166,7 @@ def process_dropbox_folder(dbx, dropbox_path, local_dir):
                 if isinstance(entry, dropbox.files.FileMetadata):
                     download_and_rename_file(dbx, entry_path, local_dir)
                 elif isinstance(entry, dropbox.files.FolderMetadata):
-                    folder_name = get_renamed_path(entry, entry_path, is_folder=True)
+                    folder_name = get_renamed_path(entry, entry_path, is_folder=True, dbx=dbx)
                     new_local_dir = os.path.join(local_dir, folder_name)
                     ensure_directory_exists(new_local_dir)
                     process_dropbox_folder(dbx, entry_path, new_local_dir)
