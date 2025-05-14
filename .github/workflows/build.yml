@@ -25,7 +25,10 @@ jobs:
           pip install pyinstaller
       - name: Build executable
         run: |
-          pyinstaller --onefile --name dropbox-renamer dropbox_renamer/rename_files_with_date.py
+          # Install dependencies that PyInstaller needs to include
+          pip install dropbox
+          # Build with all dependencies
+          pyinstaller --onefile --name dropbox-renamer --hidden-import=dropbox dropbox_renamer/rename_files_with_date.py
       - name: Create distribution zip
         run: |
           # Create a distribution directory
@@ -77,4 +80,7 @@ jobs:
         run: |
           cd test-files
           dir
-          .\dropbox-renamer.exe --help 
+          # Test with --help flag first
+          .\dropbox-renamer.exe --help
+          # Then test with a sample folder
+          .\dropbox-renamer.exe --dropbox-folder /test-folder 
