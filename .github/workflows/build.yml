@@ -36,6 +36,13 @@ jobs:
           copy README.windows.md dist\dropbox-renamer-windows\README.md
           # Create the zip file
           Compress-Archive -Path dist\dropbox-renamer-windows\* -DestinationPath dist\dropbox-renamer-windows.zip
+          # List files to verify
+          dir dist
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-executable
+          path: dist/dropbox-renamer-windows.zip
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v1
@@ -44,7 +51,8 @@ jobs:
           name: Dropbox Renamer ${{ github.ref_name }}
           draft: false
           prerelease: false
-          files: dist/dropbox-renamer-windows.zip
+          files: |
+            dist/dropbox-renamer-windows.zip
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -54,16 +62,11 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Download release
-        run: |
-          $headers = @{
-            "Authorization" = "token ${{ secrets.GITHUB_TOKEN }}"
-            "Accept" = "application/octet-stream"
-          }
-          $url = "https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ github.ref_name }}"
-          $release = Invoke-RestMethod -Uri $url -Headers $headers
-          $asset = $release.assets | Where-Object { $_.name -eq "dropbox-renamer-windows.zip" }
-          Invoke-WebRequest -Uri $asset.url -Headers $headers -OutFile "dropbox-renamer-windows.zip"
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-executable
+          path: .
       - name: List files
         run: |
           dir
