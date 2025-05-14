@@ -1,4 +1,4 @@
-name: Build and Test Windows Executable
+name: Build and Test Executables
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  build-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -60,8 +60,55 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  test:
-    needs: build
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+      - name: Build executable
+        run: |
+          # Install dependencies that PyInstaller needs to include
+          pip install dropbox python-dotenv
+          # Build with all dependencies
+          pyinstaller --onefile --name dropbox-renamer --hidden-import=dropbox --hidden-import=dotenv dropbox_renamer/rename_files_with_date.py
+      - name: Create distribution zip
+        run: |
+          # Create a distribution directory
+          mkdir -p dist/dropbox-renamer-macos
+          # Copy the executable
+          cp dist/dropbox-renamer dist/dropbox-renamer-macos/
+          # Copy the README
+          cp README.md dist/dropbox-renamer-macos/
+          # Make the executable executable
+          chmod +x dist/dropbox-renamer-macos/dropbox-renamer
+          # Create the zip file
+          cd dist && zip -r dropbox-renamer-macos.zip dropbox-renamer-macos
+          # List files to verify
+          ls -la
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-executable
+          path: dist/dropbox-renamer-macos.zip
+      - name: Add to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            dist/dropbox-renamer-macos.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  test-windows:
+    needs: build-windows
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -70,9 +117,6 @@ jobs:
         with:
           name: windows-executable
           path: .
-      - name: List files
-        run: |
-          dir
       - name: Extract zip
         run: |
           Expand-Archive -Path dropbox-renamer-windows.zip -DestinationPath test-files -Force
@@ -80,7 +124,5 @@ jobs:
         run: |
           cd test-files
           dir
-          # Test with --help flag first
-          .\dropbox-renamer.exe --help
-          # Then test with a sample folder
-          .\dropbox-renamer.exe --dropbox-folder /test-folder 
+          # Test with --help flag
+          .\dropbox-renamer.exe --help 
