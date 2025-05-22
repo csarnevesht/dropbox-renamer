@@ -25,6 +25,28 @@ def create_timestamped_directory(base_dir):
     dir_name = f"dropbox_download_{timestamp}"
     full_path = os.path.join(base_dir, dir_name)
     os.makedirs(full_path, exist_ok=True)
+    
+    # Create log files in the download directory
+    folders_log = os.path.join(full_path, 'processed_folders.log')
+    files_log = os.path.join(full_path, 'renamed_files.log')
+    timing_log = os.path.join(full_path, 'processing_times.log')
+    
+    # Initialize log files with headers
+    with open(folders_log, 'w') as f:
+        f.write(f"Dropbox Download Log - {timestamp}\n")
+        f.write("Processed Folders:\n")
+        f.write("-" * 80 + "\n")
+    
+    with open(files_log, 'w') as f:
+        f.write(f"Dropbox Download Log - {timestamp}\n")
+        f.write("Renamed Files:\n")
+        f.write("-" * 80 + "\n")
+    
+    with open(timing_log, 'w') as f:
+        f.write(f"Dropbox Download Log - {timestamp}\n")
+        f.write("Processing Times:\n")
+        f.write("-" * 80 + "\n")
+    
     return full_path
 
 def ensure_directory_exists(directory):
@@ -38,10 +60,13 @@ def ensure_directory_exists(directory):
         return False
 
 def has_date_prefix(name):
-    """Check if the filename already has a date prefix (YYYYMMDD)."""
-    # Regular expression to match YYYYMMDD at the beginning of the filename
-    # This will match both formats: "20240101 document.pdf" and "20240101document.pdf"
-    pattern = r'^(19|20)\d{6}(?:\s+|$)'
+    """Check if the filename already has a date prefix (YYYYMMDD or YYMMDD)."""
+    # Regular expression to match various date formats at the beginning of the filename:
+    # - YYYYMMDD (e.g., 20240101)
+    # - YYYYMMDD with space and time (e.g., 20240101 123456)
+    # - YYYYMMDD with underscore and time (e.g., 20240101_123456)
+    # - YYMMDD (e.g., 210928)
+    pattern = r'^(?:(?:19|20)\d{6}(?:\s+\d{6}|_\d{6}|\s+|$)|(?:[0-9]{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])))'
     return bool(re.match(pattern, name))
 
 def get_folder_creation_date(dbx, path):
@@ -100,14 +125,14 @@ def get_renamed_path(metadata, path, is_folder=False, dbx=None):
             # For folders, try to get creation date
             if dbx:
                 date_obj = get_folder_creation_date(dbx, path)
-                date_prefix = date_obj.strftime("%Y%m%d")
+                date_prefix = date_obj.strftime("%y%m%d")
                 print(f"Using folder creation date for {path}: {date_prefix}")
             else:
                 # Fallback to current date if dbx not provided
-                date_prefix = datetime.datetime.now().strftime("%Y%m%d")
+                date_prefix = datetime.datetime.now().strftime("%y%m%d")
         else:
             # For files, use modification date from metadata
-            date_prefix = metadata.server_modified.strftime("%Y%m%d")
+            date_prefix = metadata.server_modified.strftime("%y%m%d")
         
         # Create new name with date prefix
         new_name = f"{date_prefix} {original_name}"
@@ -120,6 +145,18 @@ def get_renamed_path(metadata, path, is_folder=False, dbx=None):
     except Exception as e:
         print(f"Error generating renamed path for {path}: {e}")
         return os.path.basename(path)
+
+def log_processed_folder(folder_path, download_dir):
+    """Log a processed folder to the log file."""
+    log_file = os.path.join(download_dir, 'processed_folders.log')
+    with open(log_file, 'a') as f:
+        f.write(f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {folder_path}\n")
+
+def log_renamed_file(original_path, new_name, download_dir):
+    """Log a renamed file to the log file."""
+    log_file = os.path.join(download_dir, 'renamed_files.log')
+    with open(log_file, 'a') as f:
+        f.write(f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {original_path} -> {new_name}\n")
 
 def download_and_rename_file(dbx, dropbox_path, local_dir):
     """Download a file from Dropbox and rename it with its modification date if it doesn't already have a date prefix."""
@@ -138,6 +175,8 @@ def download_and_rename_file(dbx, dropbox_path, local_dir):
             # Generate new filename with date prefix
             new_name = get_renamed_path(metadata, dropbox_path)
             local_path = os.path.join(local_dir, new_name)
+            # Log the renamed file
+            log_renamed_file(dropbox_path, new_name, os.path.dirname(local_dir))
         
         # Download the file
         print(f"Downloading: {dropbox_path} -> {local_path}")
@@ -146,9 +185,75 @@ def download_and_rename_file(dbx, dropbox_path, local_dir):
     except Exception as e:
         print(f"Error processing file {dropbox_path}: {e}")
 
-def process_dropbox_folder(dbx, dropbox_path, local_dir):
+def read_allowed_folders(file_path='./dropbox_renamer/dropbox_files.txt'):
+    """Read the list of allowed folder names from dropbox_files.txt."""
+    try:
+        if not os.path.exists(file_path):
+            print(f"Warning: {file_path} not found. Will process all folders.")
+            return None
+            
+        with open(file_path, 'r') as f:
+            # Read lines and strip whitespace, skip empty lines
+            folders = [line.strip() for line in f.readlines() if line.strip()]
+            
+        if not folders:
+            print(f"Warning: {file_path} is empty. Will process all folders.")
+            return None
+            
+        print(f"Found {len(folders)} allowed folders in {file_path}")
+        return folders
+    except Exception as e:
+        print(f"Error reading {file_path}: {e}")
+        return None
+
+def read_ignored_folders(file_path='./dropbox_ignore.txt'):
+    """Read the list of folders to ignore from dropbox_ignore.txt."""
+    try:
+        if not os.path.exists(file_path):
+            print(f"Warning: {file_path} not found. No folders will be ignored.")
+            return set()
+            
+        with open(file_path, 'r') as f:
+            # Read lines and strip whitespace, skip empty lines
+            folders = {line.strip() for line in f.readlines() if line.strip()}
+            
+        if not folders:
+            print(f"Warning: {file_path} is empty. No folders will be ignored.")
+            return set()
+            
+        print(f"Found {len(folders)} folders to ignore in {file_path}")
+        return folders
+    except Exception as e:
+        print(f"Error reading {file_path}: {e}")
+        return set()
+
+def format_duration(seconds):
+    """Format duration in seconds to a human-readable string with hours, minutes, and seconds."""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    seconds = seconds % 60
+    
+    if hours > 0:
+        return f"{hours}h {minutes}m {seconds:.1f}s"
+    elif minutes > 0:
+        return f"{minutes}m {seconds:.1f}s"
+    else:
+        return f"{seconds:.1f}s"
+
+def log_processing_time(account_name, start_time, end_time, download_dir):
+    """Log the processing time for an account."""
+    duration = end_time - start_time
+    seconds = duration.total_seconds()
+    log_file = os.path.join(download_dir, 'processing_times.log')
+    with open(log_file, 'a') as f:
+        f.write(f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {account_name}: {format_duration(seconds)}\n")
+
+def process_dropbox_folder(dbx, dropbox_path, local_dir, allowed_folders=None, ignored_folders=None, account_start_time=None, total_accounts=None, processed_accounts=None):
     """Process a Dropbox folder recursively."""
     try:
+        # Log the processed folder
+        log_processed_folder(dropbox_path, local_dir)
+        
         # List all entries in the folder
         result = dbx.files_list_folder(dropbox_path)
         
@@ -157,19 +262,47 @@ def process_dropbox_folder(dbx, dropbox_path, local_dir):
             entry_path = entry.path_display
             
             if isinstance(entry, dropbox.files.FileMetadata):
-                # It's a file, download and rename it
-                download_and_rename_file(dbx, entry_path, local_dir)
+                # Get the last folder name from the path
+                path_parts = entry_path.strip('/').split('/')
+                if len(path_parts) > 1:  # Make sure we have at least a folder and a file
+                    account_folder = path_parts[-2]  # Get the last folder name (second to last part)
+                    account_dir = os.path.join(local_dir, account_folder)
+                    ensure_directory_exists(account_dir)
+                    download_and_rename_file(dbx, entry_path, account_dir)
+                else:
+                    # If path is not deep enough, download to current directory
+                    download_and_rename_file(dbx, entry_path, local_dir)
             elif isinstance(entry, dropbox.files.FolderMetadata):
-                # Skip the "DEAD file" folder
+                # Skip folders that are in the ignore list
                 folder_name = os.path.basename(entry_path)
-                if folder_name == "DEAD file":
-                    print(f"Skipping folder: {entry_path}")
+                if ignored_folders and folder_name in ignored_folders:
+                    print(f"Skipping ignored folder: {entry_path}")
                     continue
-                    
-                # It's a folder, create local directory with original name and process its contents
-                new_local_dir = os.path.join(local_dir, folder_name)
-                ensure_directory_exists(new_local_dir)
-                process_dropbox_folder(dbx, entry_path, new_local_dir)
+                
+                # If we have a list of allowed folders, check if this folder should be processed
+                if allowed_folders is not None:
+                    # Get the full path components
+                    path_parts = entry_path.strip('/').split('/')
+                    # Check if any part of the path matches an allowed folder
+                    if not any(folder in path_parts for folder in allowed_folders):
+                        print(f"Skipping folder not in allowed list: {entry_path}")
+                        continue
+                
+                # If this is an account folder (direct child of Principal Protection), log its processing time
+                if len(entry_path.strip('/').split('/')) == 5:  # All files/A Work Documents/A WORK Documents/Principal Protection/Account Name
+                    account_start = datetime.datetime.now()
+                    if processed_accounts is not None:
+                        processed_accounts[0] += 1
+                        progress = (processed_accounts[0] / total_accounts[0]) * 100
+                        print(f"\nProcessing account {processed_accounts[0]}/{total_accounts[0]} ({progress:.1f}%): {folder_name}")
+                    process_dropbox_folder(dbx, entry_path, local_dir, allowed_folders, ignored_folders, account_start, total_accounts, processed_accounts)
+                    account_end = datetime.datetime.now()
+                    duration = account_end - account_start
+                    print(f"Completed {folder_name} in {format_duration(duration.total_seconds())}")
+                    log_processing_time(folder_name, account_start, account_end, local_dir)
+                else:
+                    # Process the folder with the same local directory
+                    process_dropbox_folder(dbx, entry_path, local_dir, allowed_folders, ignored_folders, account_start_time, total_accounts, processed_accounts)
         
         # Handle pagination if there are more entries
         while result.has_more:
@@ -178,21 +311,108 @@ def process_dropbox_folder(dbx, dropbox_path, local_dir):
                 entry_path = entry.path_display
                 
                 if isinstance(entry, dropbox.files.FileMetadata):
-                    download_and_rename_file(dbx, entry_path, local_dir)
+                    # Get the last folder name from the path
+                    path_parts = entry_path.strip('/').split('/')
+                    if len(path_parts) > 1:  # Make sure we have at least a folder and a file
+                        account_folder = path_parts[-2]  # Get the last folder name (second to last part)
+                        account_dir = os.path.join(local_dir, account_folder)
+                        ensure_directory_exists(account_dir)
+                        download_and_rename_file(dbx, entry_path, account_dir)
+                    else:
+                        # If path is not deep enough, download to current directory
+                        download_and_rename_file(dbx, entry_path, local_dir)
                 elif isinstance(entry, dropbox.files.FolderMetadata):
-                    # Skip the "DEAD file" folder
+                    # Skip folders that are in the ignore list
                     folder_name = os.path.basename(entry_path)
-                    if folder_name == "DEAD file":
-                        print(f"Skipping folder: {entry_path}")
+                    if ignored_folders and folder_name in ignored_folders:
+                        print(f"Skipping ignored folder: {entry_path}")
                         continue
-                        
-                    # It's a folder, create local directory with original name and process its contents
-                    new_local_dir = os.path.join(local_dir, folder_name)
-                    ensure_directory_exists(new_local_dir)
-                    process_dropbox_folder(dbx, entry_path, new_local_dir)
+                    
+                    # If we have a list of allowed folders, check if this folder should be processed
+                    if allowed_folders is not None:
+                        # Get the full path components
+                        path_parts = entry_path.strip('/').split('/')
+                        # Check if any part of the path matches an allowed folder
+                        if not any(folder in path_parts for folder in allowed_folders):
+                            print(f"Skipping folder not in allowed list: {entry_path}")
+                            continue
+                    
+                    # If this is an account folder (direct child of Principal Protection), log its processing time
+                    if len(entry_path.strip('/').split('/')) == 5:  # All files/A Work Documents/A WORK Documents/Principal Protection/Account Name
+                        account_start = datetime.datetime.now()
+                        if processed_accounts is not None:
+                            processed_accounts[0] += 1
+                            progress = (processed_accounts[0] / total_accounts[0]) * 100
+                            print(f"\nProcessing account {processed_accounts[0]}/{total_accounts[0]} ({progress:.1f}%): {folder_name}")
+                        process_dropbox_folder(dbx, entry_path, local_dir, allowed_folders, ignored_folders, account_start_time, total_accounts, processed_accounts)
+                        account_end = datetime.datetime.now()
+                        duration = account_end - account_start
+                        print(f"Completed {folder_name} in {format_duration(duration.total_seconds())}")
+                        log_processing_time(folder_name, account_start, account_end, local_dir)
+                    else:
+                        # Process the folder with the same local directory
+                        process_dropbox_folder(dbx, entry_path, local_dir, allowed_folders, ignored_folders, account_start_time, total_accounts, processed_accounts)
                     
     except Exception as e:
         print(f"Error processing folder {dropbox_path}: {e}")
+
+def count_account_folders(dbx, dropbox_path, allowed_folders=None, ignored_folders=None):
+    """Count the number of account folders that will be processed."""
+    try:
+        count = 0
+        result = dbx.files_list_folder(dropbox_path)
+        
+        for entry in result.entries:
+            if isinstance(entry, dropbox.files.FolderMetadata):
+                entry_path = entry.path_display
+                folder_name = os.path.basename(entry_path)
+                
+                # Skip ignored folders
+                if ignored_folders and folder_name in ignored_folders:
+                    continue
+                
+                # Check if folder is in allowed list
+                if allowed_folders is not None:
+                    path_parts = entry_path.strip('/').split('/')
+                    if not any(folder in path_parts for folder in allowed_folders):
+                        continue
+                
+                # If this is an account folder, increment count
+                if len(entry_path.strip('/').split('/')) == 5:
+                    count += 1
+                
+                # Recursively count in subfolders
+                count += count_account_folders(dbx, entry_path, allowed_folders, ignored_folders)
+        
+        # Handle pagination
+        while result.has_more:
+            result = dbx.files_list_folder_continue(result.cursor)
+            for entry in result.entries:
+                if isinstance(entry, dropbox.files.FolderMetadata):
+                    entry_path = entry.path_display
+                    folder_name = os.path.basename(entry_path)
+                    
+                    # Skip ignored folders
+                    if ignored_folders and folder_name in ignored_folders:
+                        continue
+                    
+                    # Check if folder is in allowed list
+                    if allowed_folders is not None:
+                        path_parts = entry_path.strip('/').split('/')
+                        if not any(folder in path_parts for folder in allowed_folders):
+                            continue
+                    
+                    # If this is an account folder, increment count
+                    if len(entry_path.strip('/').split('/')) == 5:
+                        count += 1
+                    
+                    # Recursively count in subfolders
+                    count += count_account_folders(dbx, entry_path, allowed_folders, ignored_folders)
+        
+        return count
+    except Exception as e:
+        print(f"Error counting account folders: {e}")
+        return 0
 
 def update_env_file(env_file, token):
     """Update the .env file with the new token."""
@@ -448,8 +668,17 @@ def main():
     args = parser.parse_args()
     
     try:
+        # Start timing the total process
+        total_start_time = datetime.datetime.now()
+        
         # Get access token
         access_token = get_access_token(args.env_file)
+        
+        # Read allowed folders from dropbox_files.txt
+        allowed_folders = read_allowed_folders()
+        
+        # Read ignored folders from dropbox_ignore.txt
+        ignored_folders = read_ignored_folders()
         
         # Clean and format the Dropbox path
         dropbox_path = clean_dropbox_path(args.dropbox_folder)
@@ -493,32 +722,25 @@ def main():
         else:
             print(f"\nCould not find exact folder path. Will try with original path: {dropbox_path}")
         
-        # Debug: List root folder contents
-        if args.debug:
-            print("\nListing root directory contents:")
-            entries = list_folder_contents(dbx, "")
-            
-            if not entries:
-                print("\nNo entries found in root directory. Checking permissions...")
-                try:
-                    # Try to get account space usage
-                    usage = dbx.users_get_space_usage()
-                    print(f"Account space usage: {usage.used} / {usage.allocation}")
-                    
-                    # Try to list each part of the path
-                    path_parts = [p for p in dropbox_path.split('/') if p]
-                    current_path = ""
-                    for part in path_parts:
-                        current_path += "/" + part
-                        print(f"\nTrying to list: {current_path}")
-                        list_folder_contents(dbx, current_path)
-                except Exception as e:
-                    print(f"Error getting space usage: {e}")
+        # Count total number of account folders to process
+        print("\nCounting account folders to process...")
+        total_accounts = [count_account_folders(dbx, dropbox_path, allowed_folders, ignored_folders)]
+        processed_accounts = [0]
+        print(f"Found {total_accounts[0]} account folders to process")
         
         # Process the Dropbox folder
         print(f"\nProcessing Dropbox folder: {dropbox_path}")
-        process_dropbox_folder(dbx, dropbox_path, download_dir)
-        print("\nDownload complete!")
+        process_dropbox_folder(dbx, dropbox_path, download_dir, allowed_folders, ignored_folders, None, total_accounts, processed_accounts)
+        
+        # Log total processing time
+        total_end_time = datetime.datetime.now()
+        total_duration = total_end_time - total_start_time
+        total_seconds = total_duration.total_seconds()
+        with open(os.path.join(download_dir, 'processing_times.log'), 'a') as f:
+            f.write("\n" + "-" * 80 + "\n")
+            f.write(f"Total processing time: {format_duration(total_seconds)}\n")
+        
+        print(f"\nDownload complete! Total time: {format_duration(total_seconds)}")
         
     except Exception as e:
         print(f"Error: {e}")

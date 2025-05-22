@@ -92,3 +92,6 @@ coverage.xml
 *.log
 logs/
 token.txt
+data/
+data/** 
+dropbox_renamer/dropbox_files.txt
