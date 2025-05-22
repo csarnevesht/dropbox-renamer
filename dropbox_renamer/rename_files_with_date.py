@@ -653,6 +653,56 @@ def list_app_folder_contents(dbx):
     except Exception as e:
         print(f"Error listing app folder contents: {e}")
 
+def collect_folder_stats(download_dir):
+    """Collect statistics about processed folders and files."""
+    stats = {}
+    timing_log = os.path.join(download_dir, 'processing_times.log')
+    
+    # Read the timing log to get processing times
+    with open(timing_log, 'r') as f:
+        for line in f:
+            if ' - ' in line and ':' in line:
+                # Parse timing entries
+                timestamp, rest = line.split(' - ', 1)
+                if ':' in rest:
+                    account, duration = rest.split(': ', 1)
+                    stats[account] = {'time': duration.strip()}
+    
+    # Count files in each account folder
+    for item in os.listdir(download_dir):
+        item_path = os.path.join(download_dir, item)
+        if os.path.isdir(item_path) and item != '__pycache__':
+            file_count = sum(1 for f in os.listdir(item_path) if os.path.isfile(os.path.join(item_path, f)))
+            if item in stats:
+                stats[item]['files'] = file_count
+            else:
+                stats[item] = {'files': file_count, 'time': 'N/A'}
+    
+    return stats
+
+def display_summary(stats, total_time):
+    """Display a summary of the processing results."""
+    print("\n" + "=" * 80)
+    print("PROCESSING SUMMARY")
+    print("=" * 80)
+    print(f"Total accounts processed: {len(stats)}")
+    print(f"Total processing time: {total_time}")
+    print("\nAccount Details:")
+    print("-" * 80)
+    print(f"{'Account Name':<40} {'Files':<10} {'Processing Time':<20}")
+    print("-" * 80)
+    
+    total_files = 0
+    for account, data in sorted(stats.items()):
+        files = data.get('files', 0)
+        time = data.get('time', 'N/A')
+        print(f"{account:<40} {files:<10} {time:<20}")
+        total_files += files
+    
+    print("-" * 80)
+    print(f"Total files processed: {total_files}")
+    print("=" * 80)
+
 def main():
     """Main function to run the script."""
     parser = argparse.ArgumentParser(description='Download and rename Dropbox files with their modification dates.')
@@ -736,11 +786,17 @@ def main():
         total_end_time = datetime.datetime.now()
         total_duration = total_end_time - total_start_time
         total_seconds = total_duration.total_seconds()
+        total_time_str = format_duration(total_seconds)
+        
         with open(os.path.join(download_dir, 'processing_times.log'), 'a') as f:
             f.write("\n" + "-" * 80 + "\n")
-            f.write(f"Total processing time: {format_duration(total_seconds)}\n")
+            f.write(f"Total processing time: {total_time_str}\n")
         
-        print(f"\nDownload complete! Total time: {format_duration(total_seconds)}")
+        # Collect and display summary statistics
+        stats = collect_folder_stats(download_dir)
+        display_summary(stats, total_time_str)
+        
+        print(f"\nDownload complete! Total time: {total_time_str}")
         
     except Exception as e:
         print(f"Error: {e}")
